@@ -7,3 +7,4 @@ opencv-python
 opencv-contrib-python
 numpy
 pyrealsense2
+pyyaml
