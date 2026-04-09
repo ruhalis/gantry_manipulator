@@ -10,6 +10,7 @@
 ```
 sudo apt install ros-humble-moveit
 sudo apt install ros-humble-moveit* ros-humble-ros2-control ros-humble-ros2-controllers
+sudo apt install ros-humble-realsense2-camera
 ```
 ```
 colcon build
@@ -28,6 +29,9 @@ ros2 run roarm_moveit_cmd movepointcmd --ros-args --params-file install/roarm_mo
 ```
 ```
 ros2 launch roarm_moveit_cmd command_control.launch.py
+```
+```
+ros2 run realsense2_camera realsense2_camera_node
 ```
 ```
 ros2 run roarm_moveit_cmd getposecmd
