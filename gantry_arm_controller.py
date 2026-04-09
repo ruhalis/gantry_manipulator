@@ -10,21 +10,15 @@ Strategy:
      arm's base is within ARM_REACH_RADIUS of the target.
   2. Move gantry to that position (relative mm commands over serial).
   3. Compute the local offset from the arm's base to the target.
-  4. Command the RoArm to move its end-effector to that local offset.
+  4. Command the RoArm via ROS2 /move_point_cmd service (MoveIt2).
 
-The gantry Arduino expects: "dx_mm, dy_mm\\n" (relative moves).
-The RoArm uses Waveshare JSON protocol over serial (all coordinates in mm):
-  T:1041  - Cartesian move (non-blocking): {"T":1041,"x":235,"y":0,"z":234,"t":3.14}
-  T:104   - Cartesian move (blocking):     {"T":104,"x":235,"y":0,"z":234,"t":3.14,"spd":0.25}
-  T:100   - Move to init position
-  T:105   - Get feedback (position, angles, torque)
+The gantry Arduino expects: "dx_mm, dy_mm\n" (relative moves).
+The arm is controlled via ROS2 /move_point_cmd service (requires ROS2 stack running).
 """
 
 import math
 import time
-import json
 import serial
-import threading
 import argparse
 import sys
 
@@ -45,7 +39,6 @@ ARM_MAX_REACH_MM = L2 + L3  # ~519mm theoretical max
 
 ARM_REACH_RADIUS_MM = 200.0  # default comfortable reach radius in mm
 ARM_DEFAULT_Z_MM = -15.0     # default end-effector height in mm
-GRIPPER_DEFAULT_T = 3.14     # default gripper/wrist angle in radians (closed)
 
 
 def gantry_to_arm_coords(local_x: float, local_y: float) -> tuple:
@@ -146,116 +139,16 @@ class GantryController:
 
 class RoArmController:
     """
-    Controls Waveshare RoArm-M2-S via direct serial JSON commands.
-    Protocol reference: https://www.waveshare.com/wiki/RoArm-M2-S_Robotic_Arm_Control
-
-    Key commands:
-      T:100  - Move to init position (blocking)
-      T:1041 - Cartesian move, non-blocking: {"T":1041,"x":mm,"y":mm,"z":mm,"t":rad}
-      T:104  - Cartesian move, blocking:     {"T":104,"x":mm,"y":mm,"z":mm,"t":rad,"spd":0.25}
-      T:105  - Request feedback (returns T:1051 with position/angles/torque)
-    All x,y,z values are in mm. t is gripper/wrist angle in radians.
+    Controls Waveshare RoArm-M2-S via ROS2 /move_point_cmd service (MoveIt2).
+    Requires the ROS2 stack to be running (command_control.launch.py or similar).
     """
 
-    def __init__(self, roarm_port: str = None, baud: int = 115200, node: Node = None):
-        self.roarm_port = roarm_port
-        self.roarm_serial = None
-        self._reader_thread = None
-        self._last_feedback = None
-        self._running = False
+    def __init__(self, node: Node):
         self._node = node
-        self._move_client = None
-
-        if roarm_port:
-            self.roarm_serial = serial.Serial(
-                roarm_port, baud, timeout=1,
-                dsrdtr=None
-            )
-            self.roarm_serial.setRTS(False)
-            self.roarm_serial.setDTR(False)
-            time.sleep(0.5)
-
-            self._running = True
-            self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
-            self._reader_thread.start()
-
-            # drain any startup garbage
-            time.sleep(1.0)
-        elif node:
-            self._move_client = node.create_client(MovePointCmd, '/move_point_cmd')
-
-    def _read_loop(self):
-        """Background thread to continuously read arm serial output."""
-        while self._running:
-            try:
-                if self.roarm_serial and self.roarm_serial.in_waiting:
-                    line = self.roarm_serial.readline().decode('utf-8', errors='ignore').strip()
-                    if not line:
-                        continue
-                    # try to parse JSON feedback
-                    try:
-                        data = json.loads(line)
-                        if data.get("T") == 1051:
-                            self._last_feedback = data
-                    except json.JSONDecodeError:
-                        pass
-                else:
-                    time.sleep(0.05)
-            except Exception:
-                time.sleep(0.1)
-
-    def send_command(self, cmd: dict):
-        """Send a JSON command to the RoArm."""
-        if not self.roarm_serial:
-            return
-        cmd_str = json.dumps(cmd) + "\n"
-        self.roarm_serial.write(cmd_str.encode('utf-8'))
-
-    def init_position(self):
-        """Move arm to initial/home position."""
-        print("  [RoArm] Moving to init position...")
-        if self.roarm_serial:
-            self.send_command({"T": 100})
-            time.sleep(3)
-        else:
-            # ROS2 mode: move to default home position (metres)
-            self._move_ros2(200.0, 0.0, 100.0)
-
-    def move_to_xyz(self, x_mm: float, y_mm: float, z_mm: float,
-                    t: float = GRIPPER_DEFAULT_T, blocking: bool = True) -> bool:
-        """
-        Move end-effector to Cartesian coordinates (all in mm).
-        x: forward (+) / backward (-)
-        y: left (+) / right (-)
-        z: up (+) / down (-)
-        t: gripper/wrist angle in radians (default 3.14 = closed)
-        """
-        if self.roarm_serial:
-            return self._move_serial(x_mm, y_mm, z_mm, t, blocking)
-        else:
-            return self._move_ros2(x_mm, y_mm, z_mm)
-
-    def _move_serial(self, x_mm: float, y_mm: float, z_mm: float,
-                     t: float, blocking: bool) -> bool:
-        if blocking:
-            cmd = {"T": 104, "x": x_mm, "y": y_mm, "z": z_mm, "t": t, "spd": 0.25}
-        else:
-            cmd = {"T": 1041, "x": x_mm, "y": y_mm, "z": z_mm, "t": t}
-
-        print(f"  [RoArm] Sending: {json.dumps(cmd)}")
-        self.send_command(cmd)
-
-        if blocking:
-            time.sleep(2.0)
-        else:
-            time.sleep(0.5)
-
-        return True
+        self._move_client = node.create_client(MovePointCmd, '/move_point_cmd')
 
     def wait_for_service(self, timeout_sec: float = 10.0) -> bool:
-        """Wait for /move_point_cmd service to become available (ROS2 mode only)."""
-        if self._move_client is None:
-            return True  # serial mode, no service needed
+        """Wait for /move_point_cmd service to become available."""
         print("  [ROS2] Waiting for /move_point_cmd service...")
         if not self._move_client.wait_for_service(timeout_sec=timeout_sec):
             print("  [ROS2] Service /move_point_cmd not available!")
@@ -263,12 +156,22 @@ class RoArmController:
         print("  [ROS2] Service ready.")
         return True
 
-    def _move_ros2(self, x_mm: float, y_mm: float, z_mm: float) -> bool:
-        """Move via ROS2 service client (requires rclpy node and ROS2 stack running)."""
-        if self._move_client is None:
-            print("  [ROS2] No service client — pass a rclpy node or --roarm-port")
-            return False
+    def init_position(self):
+        """Move arm to default home position via ROS2."""
+        print("  [RoArm] Moving to init position...")
+        self._move_ros2(200.0, 0.0, 100.0)
 
+    def move_to_xyz(self, x_mm: float, y_mm: float, z_mm: float) -> bool:
+        """
+        Move end-effector to Cartesian coordinates (all in mm).
+        x: forward (+) / backward (-)
+        y: left (+) / right (-)
+        z: up (+) / down (-)
+        """
+        return self._move_ros2(x_mm, y_mm, z_mm)
+
+    def _move_ros2(self, x_mm: float, y_mm: float, z_mm: float) -> bool:
+        """Move via ROS2 /move_point_cmd service (MoveIt2 planning)."""
         x_m = x_mm / 1000.0
         y_m = y_mm / 1000.0
         z_m = z_mm / 1000.0
@@ -290,21 +193,8 @@ class RoArmController:
             print("  [ROS2] Service call timed out or failed")
             return False
 
-    def get_feedback(self) -> dict:
-        """Request and return arm feedback (T:105 -> T:1051 response)."""
-        self._last_feedback = None
-        self.send_command({"T": 105})
-        deadline = time.time() + 2.0
-        while time.time() < deadline:
-            if self._last_feedback:
-                return self._last_feedback
-            time.sleep(0.1)
-        return None
-
     def close(self):
-        self._running = False
-        if self.roarm_serial and self.roarm_serial.is_open:
-            self.roarm_serial.close()
+        pass
 
 
 def compute_gantry_target(target_x_mm: float, target_y_mm: float,
@@ -422,7 +312,6 @@ def interactive_mode(gantry: GantryController, arm: RoArmController,
     print("  gantry x, y   - move gantry only (mm)")
     print("  arm x, y      - move arm only (mm, local coords)")
     print("  init           - send arm to init/home position")
-    print("  feedback       - get arm position feedback")
     print("  home           - return everything to (0, 0)")
     print("  pos            - show current positions")
     print("  radius N       - set arm reach radius (mm)")
@@ -450,17 +339,6 @@ def interactive_mode(gantry: GantryController, arm: RoArmController,
 
         elif parts[0] == "init":
             arm.init_position()
-
-        elif parts[0] == "feedback":
-            fb = arm.get_feedback()
-            if fb:
-                print(f"  Arm position: x={fb.get('x',0):.1f}, y={fb.get('y',0):.1f}, z={fb.get('z',0):.1f} mm")
-                print(f"  Joint angles: base={fb.get('b',0):.3f}, shoulder={fb.get('s',0):.3f}, "
-                      f"elbow={fb.get('e',0):.3f}, hand={fb.get('t',0):.3f} rad")
-                print(f"  Torque: B={fb.get('torB',0)}, S={fb.get('torS',0)}, "
-                      f"E={fb.get('torE',0)}, H={fb.get('torH',0)}")
-            else:
-                print("  No feedback received (timeout)")
 
         elif parts[0] == "pos":
             gx, gy = gantry.get_position()
@@ -517,20 +395,15 @@ def interactive_mode(gantry: GantryController, arm: RoArmController,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Coordinated gantry + RoArm controller"
+        description="Coordinated gantry + RoArm controller (ROS2 mode)"
     )
     parser.add_argument(
         "--gantry-port", type=str, required=True,
         help="Serial port for the Arduino gantry (e.g., /dev/ttyUSB1 or COM3)"
     )
     parser.add_argument(
-        "--roarm-port", type=str, default=None,
-        help="Serial port for RoArm direct control (e.g., /dev/ttyUSB0). "
-             "If omitted, uses ROS2 service calls instead."
-    )
-    parser.add_argument(
         "--baud", type=int, default=115200,
-        help="Baud rate for serial connections (default: 115200)"
+        help="Baud rate for gantry serial connection (default: 115200)"
     )
     parser.add_argument(
         "--reach-radius", type=float, default=ARM_REACH_RADIUS_MM,
@@ -551,24 +424,19 @@ def main():
     gantry = GantryController(args.gantry_port, args.baud)
     print(f"  Connected on {args.gantry_port}")
 
-    # ROS2 is only needed when no direct serial port is given for the arm
-    ros2_node = None
-    if not args.roarm_port:
-        rclpy.init()
-        ros2_node = Node('gantry_arm_controller')
-        print("  ROS2 node initialized")
+    rclpy.init()
+    ros2_node = Node('gantry_arm_controller')
+    print("  ROS2 node initialized")
 
-    arm = RoArmController(roarm_port=args.roarm_port, baud=args.baud, node=ros2_node)
-    if args.roarm_port:
-        print(f"  RoArm direct serial on {args.roarm_port}")
-    else:
-        print(f"  RoArm via ROS2 service calls")
-        if not arm.wait_for_service(timeout_sec=10.0):
-            print("ERROR: /move_point_cmd not available. Is movepointcmd running?")
-            gantry.close()
-            ros2_node.destroy_node()
-            rclpy.shutdown()
-            sys.exit(1)
+    arm = RoArmController(node=ros2_node)
+    print("  RoArm via ROS2 service calls")
+
+    if not arm.wait_for_service(timeout_sec=10.0):
+        print("ERROR: /move_point_cmd not available. Is movepointcmd running?")
+        gantry.close()
+        ros2_node.destroy_node()
+        rclpy.shutdown()
+        sys.exit(1)
 
     try:
         if args.goto:
@@ -585,9 +453,8 @@ def main():
         print("Closing connections...")
         gantry.close()
         arm.close()
-        if ros2_node:
-            ros2_node.destroy_node()
-            rclpy.shutdown()
+        ros2_node.destroy_node()
+        rclpy.shutdown()
         print("Done.")
 
 

@@ -68,15 +68,14 @@ ros2 launch roarm_moveit_cmd command_control_calibrated.launch.py
 
 ### Gantry + Arm Coordinated Control
 
-```bash
-# Direct serial control (no ROS2 needed for arm)
-python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1 --roarm-port /dev/ttyUSB0
+Requires the ROS2 stack to be running (driver + command_control.launch.py).
 
-# With ROS2 stack running (arm via /move_point_cmd service)
+```bash
+# Interactive mode
 python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1
 
 # Single move then exit
-python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1 --roarm-port /dev/ttyUSB0 --goto 200 200
+python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1 --goto 200 200
 ```
 
 ### Service Commands
@@ -127,7 +126,7 @@ Calibration offsets stored in `config/calibration_offsets.yaml`, applied by `com
 
 ### Package Structure
 
-- **`gantry_arm_controller.py`** (top-level) — Coordinated gantry+arm controller. Two control modes: direct serial JSON commands to the RoArm, or ROS2 `/move_point_cmd` service calls. Gantry Arduino receives relative move commands as `"dx_mm, dy_mm\n"` over serial.
+- **`gantry_arm_controller.py`** (top-level) — Coordinated gantry+arm controller. Arm controlled via ROS2 `/move_point_cmd` service (MoveIt2). Gantry Arduino receives relative move commands as `"dx_mm, dy_mm\n"` over serial.
 - **`roarm_driver/`** — Hardware driver, serial communication with ESP32
 - **`roarm_description/`** — URDF robot model
 - **`roarm_moveit/`** — MoveIt2 configuration (kinematics, planning, controllers)

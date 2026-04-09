@@ -14,10 +14,7 @@ ros2 run roarm_moveit_cmd getposecmd
   src/roarm_main/roarm_moveit_cmd/config/calibration_targets.yaml \
     --loops 4 \
     --output-dir .
-# Direct serial control (no ROS2 needed)
-python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1 --roarm-port /dev/ttyUSB0
-
-# Or with ROS2 stack running
+# Gantry + arm coordinated control (requires ROS2 stack running)
 python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1
 
 
