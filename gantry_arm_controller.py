@@ -44,14 +44,9 @@ ARM_DEFAULT_Z_MM = -15.0     # default end-effector height in mm
 def gantry_to_arm_coords(local_x: float, local_y: float) -> tuple:
     """
     Convert gantry-frame local coordinates to RoArm coordinates.
-    The RoArm's coordinate frame is rotated 90 degrees clockwise
-    relative to the gantry XY frame.
-
-    Gantry (local_x, local_y) -> Arm (local_y, -local_x)
+    Axes are aligned: gantry and arm share the same X/Y directions.
     """
-    arm_x = local_y
-    arm_y = -local_x
-    return arm_x, arm_y
+    return local_x, local_y
 
 
 class GantryController:
