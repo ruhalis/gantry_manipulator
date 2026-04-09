@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a ROS2 Humble workspace for the RoArm-M2-S robotic arm, integrating MoveIt2 for motion planning and calibration. The project is designed for Ubuntu 22.04 with ROS2 Humble.
+This is a ROS2 Humble workspace for the RoArm-M2-S robotic arm mounted on a 2-axis XY gantry, integrating MoveIt2 for motion planning and calibration. The gantry extends the arm's workspace by positioning the arm base, then the arm reaches the final target. Designed for Ubuntu 22.04 with ROS2 Humble, running on a Jetson (aarch64/tegra).
 
 ## Build and Compilation
 
@@ -12,17 +12,15 @@ This is a ROS2 Humble workspace for the RoArm-M2-S robotic arm, integrating Move
 ```bash
 ./build_first.sh
 ```
-This runs:
-- `colcon build` (full workspace build)
-- Adds workspace to `~/.bashrc`
+Runs `colcon build` and adds workspace source to `~/.bashrc`.
+
+**Note:** The build scripts reference `~/roarm_calibration` as the workspace path. If your checkout is elsewhere, update the `cd` path in `build_first.sh` and `build_common.sh`.
 
 ### Regular Development Build
 ```bash
 ./build_common.sh
 ```
-This runs:
-- `colcon build` (full workspace)
-- Sources the workspace: `source install/setup.bash`
+Runs `colcon build` then `source install/setup.bash`.
 
 ### Build Single Package
 ```bash
@@ -32,294 +30,155 @@ source install/setup.bash
 
 ## Hardware Connection
 
-The RoArm-M2-S connects via USB serial (typically `/dev/ttyUSB0`). Before running the driver:
+### RoArm-M2-S (USB Serial)
+Connects via USB serial (typically `/dev/ttyUSB0`). Before running the driver:
 ```bash
 sudo chmod 666 /dev/ttyUSB0
 ```
 
-If using a different serial port, modify line 15 in `src/roarm_main/roarm_driver/roarm_driver/roarm_driver.py`:
-```python
-serial_port = "/dev/ttyUSB0"  # Change as needed
+If using a different serial port, modify `src/roarm_main/roarm_driver/roarm_driver/roarm_driver.py` line 15.
+
+### Arduino Gantry
+The gantry Arduino typically appears on `/dev/ttyUSB1`. For network-bridged serial (e.g., Arduino on another machine):
+```bash
+sudo socat PTY,link=/dev/ttyArduino,rawer TCP:192.168.64.1:54321 &
+sudo chmod 666 /dev/ttyArduino
 ```
 
 ## Common Launch Commands
 
 ### Core Control
 
-**Driver Node (Required for Physical Robot):**
 ```bash
+# Driver node (required for physical robot)
 ros2 run roarm_driver roarm_driver
-```
 
-**Basic Joint Control with Rviz2:**
-```bash
+# Joint control with Rviz2
 ros2 launch roarm_description display.launch.py
-```
 
-**Interactive MoveIt2 Control:**
-```bash
+# Interactive MoveIt2 control (drag end-effector)
 ros2 launch roarm_moveit interact.launch.py
-```
 
-**Command-Based Control (Services/Actions):**
-```bash
+# Command-based control (services/actions)
 ros2 launch roarm_moveit_cmd command_control.launch.py
-```
 
-**Calibrated Command Control:**
-```bash
+# Calibrated command control (applies offsets)
 ros2 launch roarm_moveit_cmd command_control_calibrated.launch.py
 ```
 
-### Servo/Keyboard/Gamepad Control
+### Gantry + Arm Coordinated Control
 
-Start servo control demo:
 ```bash
-ros2 launch moveit_servo demo.launch.py
+# Direct serial control (no ROS2 needed for arm)
+python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1 --roarm-port /dev/ttyUSB0
+
+# With ROS2 stack running (arm via /move_point_cmd service)
+python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1
+
+# Single move then exit
+python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1 --roarm-port /dev/ttyUSB0 --goto 200 200
 ```
 
-In separate terminals:
+### Service Commands
+
+Require `command_control.launch.py` or `command_control_calibrated.launch.py` to be running.
+
 ```bash
+# Get current pose (run node in terminal 1, call service in terminal 2)
+ros2 run roarm_moveit_cmd getposecmd
+ros2 service call /get_pose_cmd roarm_moveit/srv/GetPoseCmd
+
+# Move to position (metres)
+ros2 run roarm_moveit_cmd movepointcmd
+ros2 service call /move_point_cmd roarm_moveit/srv/MovePointCmd "{x: 0.2, y: 0, z: 0}"
+
+# Gripper control (radians)
 ros2 run roarm_moveit_cmd setgrippercmd
-ros2 run roarm_moveit_cmd keyboardcontrol
+ros2 topic pub /gripper_cmd std_msgs/msg/Float32 "{data: 0.0}" -1
+
+# Draw circle
+ros2 run roarm_moveit_cmd movecirclecmd
+ros2 service call /move_circle_cmd roarm_moveit/srv/MoveCircleCmd "{x: 0.2, y: 0, z: 0, radius: 0.1}"
 ```
 
 ## Calibration
 
-The calibration system supports two modes: **single-target** (backward compatible) and **multi-target** (comprehensive workspace mapping).
-
-### Single-Target Calibration (Quick Test)
-
-Test a single position repeatedly to measure accuracy and repeatability:
-
+### Single-Target (Quick Accuracy Test)
 ```bash
 ros2 run roarm_moveit_cmd calibrate_roarm.py \
-  --target 0.2 -0.1 -0.1 \
-  --iterations 20 \
-  --home 0.2 0.0 0.1 \
-  --settling-time 1.0 \
-  --output-dir .
+  --target 0.2 -0.1 -0.1 --iterations 20 --home 0.2 0.0 0.1 \
+  --settling-time 1.0 --output-dir .
 ```
 
-**Parameters:**
-- `--target X Y Z` - Target position to test
-- `--iterations N` - Number of repetitions (default: 3)
-- `--home X Y Z` - Home position to return to (default: 0.2 0.0 0.1)
-- `--settling-time S` - Wait time after movement (default: 1.0s)
-- `--output-dir PATH` - Output directory (default: current directory)
-
-**Output files:**
-- `calibration_YYYYMMDD_HHMMSS.json` - Full results with statistics
-- `calibration_YYYYMMDD_HHMMSS.csv` - Tabular data
-
-### Multi-Target Calibration (Comprehensive)
-
-Test multiple positions across the workspace to map positioning errors:
-
+### Multi-Target (Comprehensive Workspace Mapping)
 ```bash
 ros2 run roarm_moveit_cmd calibrate_roarm.py \
   --targets-config src/roarm_main/roarm_moveit_cmd/config/calibration_targets.yaml \
-  --loops 2 \
-  --output-dir .
+  --loops 2 --output-dir .
 ```
 
-**Parameters:**
-- `--targets-config PATH` - YAML file with target positions
-- `--loops N` - Number of complete cycles through all targets (default: 1)
-- `--settling-time S` - Override config settling time (optional)
-- `--home X Y Z` - Override config home position (optional)
-- `--output-dir PATH` - Output directory (default: current directory)
+Movement pattern per loop: `home → target1 → home → target2 → home → ...`
 
-**Movement Pattern (per loop):**
-```
-home → target1 → home → target2 → home → ... → target9 → home
-```
+Default config has 9 targets in a 3×3 grid (3 heights × 3 radial distances × 3 lateral positions). Custom targets go in `config/calibration_targets.yaml`.
 
-**Default Config:** `config/calibration_targets.yaml` includes 9 targets in a 3×3 grid:
-- 3 height levels (low/mid/high: -0.10m, 0.0m, +0.10m)
-- 3 radial distances (front/mid/back: 0.15m, 0.20m, 0.25m)
-- 3 lateral positions (left/center/right: -0.10m, 0.0m, +0.10m)
-
-**Output files:**
-- `calibration_multi_YYYYMMDD_HHMMSS.json` - Full results with per-target and global statistics
-- `calibration_multi_YYYYMMDD_HHMMSS.csv` - Comprehensive tabular data
-
-**Example output:** With 2 loops and 9 targets:
-- Total movements: 36 (2 loops × 9 targets × 2 moves)
-- Estimated time: ~30-40 minutes
-- Statistics: Per-target errors + global workspace accuracy
-- Comparison: Best/worst performing regions
-
-### Customizing Target Positions
-
-Edit `config/calibration_targets.yaml` to customize target positions:
-
-```yaml
-targets:
-  - name: "custom_target_1"
-    x: 0.18
-    y: -0.05
-    z: 0.05
-    description: "Custom test position"
-
-  - name: "custom_target_2"
-    x: 0.22
-    y: 0.05
-    z: -0.05
-    description: "Another test position"
-```
-
-**Workspace limits** (safety validation):
-```yaml
-workspace_limits:
-  x_min: 0.10
-  x_max: 0.30
-  y_min: -0.15
-  y_max: 0.15
-  z_min: -0.15
-  z_max: 0.15
-```
-
-### Using Calibrated Control
-
-Calibration offsets are stored in:
-```
-src/roarm_main/roarm_moveit_cmd/config/calibration_offsets.yaml
-```
-
-To use calibrated control, launch with:
-```bash
-ros2 launch roarm_moveit_cmd command_control_calibrated.launch.py
-```
-
-Or when running nodes directly with calibration:
-```bash
-ros2 run roarm_moveit_cmd movepointcmd \
-  --ros-args --params-file install/roarm_moveit_cmd/share/roarm_moveit_cmd/config/calibration_offsets.yaml
-```
-
-### Analyzing Calibration Results
-
-**Single-target mode:** Provides statistics for one position (mean error, std dev, repeatability)
-
-**Multi-target mode:** Provides:
-1. **Per-target statistics:** Individual accuracy metrics for each position
-2. **Global statistics:** Overall workspace accuracy (mean, std dev, RMS)
-3. **Target comparison:** Ranking of best/worst performing regions
-4. **Position-dependent errors:** Data to identify if errors vary across workspace
-
-Use multi-target results to:
-- Identify workspace regions with higher/lower accuracy
-- Determine if constant offsets are sufficient or if position-dependent compensation is needed
-- Plan future polynomial compensation implementation
-
-## Service Commands
-
-These require `command_control.launch.py` or `command_control_calibrated.launch.py` to be running.
-
-**Get Current Pose:**
-```bash
-# Terminal 1
-ros2 run roarm_moveit_cmd getposecmd
-
-# Terminal 2
-ros2 service call /get_pose_cmd roarm_moveit/srv/GetPoseCmd
-```
-
-**Move to Position:**
-```bash
-# Terminal 1
-ros2 run roarm_moveit_cmd movepointcmd
-
-# Terminal 2
-ros2 service call /move_point_cmd roarm_moveit/srv/MovePointCmd "{x: 0.2, y: 0, z: 0}"
-```
-
-**Control Gripper:**
-```bash
-# Terminal 1
-ros2 run roarm_moveit_cmd setgrippercmd
-
-# Terminal 2
-ros2 topic pub /gripper_cmd std_msgs/msg/Float32 "{data: 0.0}" -1
-```
-
-**Draw Circle:**
-```bash
-# Terminal 1
-ros2 run roarm_moveit_cmd movecirclecmd
-
-# Terminal 2
-ros2 service call /move_circle_cmd roarm_moveit/srv/MoveCircleCmd "{x: 0.2, y: 0, z: 0, radius: 0.1}"
-```
+Calibration offsets stored in `config/calibration_offsets.yaml`, applied by `command_control_calibrated.launch.py`.
 
 ## Architecture
 
 ### Package Structure
 
-**roarm_main/** - Core robotic arm functionality
-- `roarm_driver/` - Hardware driver (serial communication with ESP32)
-- `roarm_description/` - URDF robot models
-- `roarm_moveit/` - MoveIt2 configuration (kinematics, planning, controllers)
-- `roarm_moveit_ikfast_plugins/` - Fast IK solver plugins
-- `roarm_moveit_cmd/` - Control command nodes (C++ service implementations)
-  - `scripts/calibrate_roarm.py` - Calibration automation script
-  - `config/calibration_offsets.yaml` - Calibration compensation parameters
-  - `src/movepointcmd.cpp` - Move to XYZ position service
-  - `src/getposecmd_moveit2.cpp` - Get current pose service
-  - `src/setgrippercmd.cpp` - Gripper control action
-  - `src/movecirclecmd.cpp` - Circular motion planner
-  - `src/keyboardcontrol.cpp` - Keyboard input handler
-- `moveit_servo/` - Real-time servo control for keyboard
+- **`gantry_arm_controller.py`** (top-level) — Coordinated gantry+arm controller. Two control modes: direct serial JSON commands to the RoArm, or ROS2 `/move_point_cmd` service calls. Gantry Arduino receives relative move commands as `"dx_mm, dy_mm\n"` over serial.
+- **`roarm_driver/`** — Hardware driver, serial communication with ESP32
+- **`roarm_description/`** — URDF robot model
+- **`roarm_moveit/`** — MoveIt2 configuration (kinematics, planning, controllers)
+- **`roarm_moveit_ikfast_plugins/`** — IKFast inverse kinematics solver
+- **`roarm_moveit_cmd/`** — C++ service nodes + calibration scripts
+  - `src/movepointcmd.cpp` — Move to XYZ position service
+  - `src/getposecmd_moveit2.cpp` — Get current pose service
+  - `src/setgrippercmd.cpp` — Gripper control action
+  - `src/movecirclecmd.cpp` — Circular motion planner
+  - `src/keyboardcontrol.cpp` — Keyboard input handler
+  - `scripts/calibrate_roarm.py` — Calibration automation (single/multi-target)
+- **`moveit_servo/`** — Real-time servo control for keyboard/gamepad
 
-### Calibration System
+### Coordinate Frames
 
-The calibration system measures positioning errors by:
-1. Moving to target positions repeatedly (single or multiple targets)
-2. Reading actual positions via forward kinematics
-3. Calculating systematic errors (X, Y, Z offsets)
-4. Generating compensation parameters in `calibration_offsets.yaml`
+The gantry XY frame and RoArm frame are rotated 90° clockwise relative to each other:
+- Gantry `(local_x, local_y)` → Arm `(local_y, -local_x)`
+- See `gantry_to_arm_coords()` in `gantry_arm_controller.py`
 
-**Modes:**
-- **Single-target:** Tests one position repeatedly for quick accuracy assessment
-- **Multi-target:** Tests 9 positions across workspace for comprehensive error mapping
+### RoArm Serial Protocol (Direct Control)
 
-**Movement pattern (multi-target):** Home → Target1 → Home → Target2 → Home ... (configurable loops)
+The RoArm uses Waveshare JSON protocol over serial, coordinates in mm:
+- `T:100` — Move to init position
+- `T:104` — Cartesian move, blocking: `{"T":104,"x":235,"y":0,"z":234,"t":3.14,"spd":0.25}`
+- `T:1041` — Cartesian move, non-blocking: `{"T":1041,"x":235,"y":0,"z":234,"t":3.14}`
+- `T:105` — Get feedback (returns T:1051 with position/angles/torque)
 
-The calibrated launch file (`command_control_calibrated.launch.py`) loads these offsets and applies them before inverse kinematics solving, improving accuracy from ~14mm to ~5mm error.
+### Arm Geometry
 
-**Files:**
-- `scripts/calibrate_roarm.py` - Automated calibration script (single/multi-target)
-- `config/calibration_targets.yaml` - Multi-target position definitions (9 targets in 3×3 grid)
-- `config/calibration_offsets.yaml` - Compensation parameters applied during control
+From `ik.h`: L2=238.7mm, L3=280.2mm, theoretical max reach ~519mm. Default comfortable reach radius: 200mm. Default Z height: -15mm.
 
 ### Control Flow
 
-1. **Hardware Layer**: `roarm_driver` communicates via serial with ESP32 controller
+1. **Hardware Layer**: `roarm_driver` ↔ ESP32 via serial
 2. **ROS2 Control**: `ros2_control_node` manages joint controllers
-3. **MoveIt2 Layer**: Motion planning, kinematics solving, collision checking
-4. **Command Layer**: `roarm_moveit_cmd` services expose high-level commands
-5. **UI Layer**: Rviz2, keyboard control publish to ROS2 topics/services
+3. **MoveIt2 Layer**: Motion planning, IK solving, collision checking
+4. **Command Layer**: `roarm_moveit_cmd` services expose high-level XYZ commands
+5. **Gantry Layer**: `gantry_arm_controller.py` coordinates gantry positioning + arm reach
 
 ### Key Topics and Services
 
-- `/robot_description` - URDF model
-- `/joint_states` - Current joint positions
-- `/move_point_cmd` - Service to move end-effector to XYZ
-- `/get_pose_cmd` - Service to get current end-effector pose
-- `/gripper_cmd` - Topic for gripper control
-- `/led_ctrl` - Topic for gripper LED control (0-255)
+- `/joint_states` — Current joint positions
+- `/move_point_cmd` — Move end-effector to XYZ (metres, via MoveIt2)
+- `/get_pose_cmd` — Get current end-effector pose
+- `/gripper_cmd` — Gripper control topic (radians)
+- `/led_ctrl` — Gripper LED control (0-255)
 
 ## Python Dependencies
 
-Install via:
 ```bash
 python3 -m pip install -r requirements.txt
 ```
 
-## Notes
-
-- Always source the workspace after building: `source install/setup.bash`
-- Serial port permissions must be set each time the robot is connected
-- Rviz2 view controls: Left-drag (pan), Right-drag (rotate), Scroll (zoom), Middle-drag (vertical)
-- When using MoveIt2, clicking "Plan & Execute" is required to move the physical robot
+Key packages: `pyserial` (hardware communication), `opencv-python`, `numpy`, `pyrealsense2`.
