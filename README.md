@@ -1,53 +1,47 @@
 # ROS2 + Moveit2 for RoArm-M2-S
 
-Install dependencies:
+## Quick start
+### Requirements: 
+- ROS2
+- Any computer arm64/x64/x86
 
-    sudo apt install software-properties-common
-    sudo add-apt-repository universe
-    
-    sudo apt update && sudo apt install curl -y
-    sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-    
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
-    
-    sudo apt update
-    sudo apt upgrade
-    
-    sudo apt install ros-humble-desktop
-    
-    sudo apt install ros-dev-tools
-    
-    sudo apt install net-tools
-    sudo apt install ros-humble-moveit-*
-    sudo apt install ros-humble-foxglove-bridge
-    sudo apt autoremove ros-humble-moveit-servo-*
+### Install dependencies:
 
-Add ROS2 to the source
-Source the setup script:
+```
+sudo apt install ros-humble-moveit
+sudo apt install ros-humble-moveit* ros-humble-ros2-control ros-humble-ros2-controllers
+```
+```
+colcon build
+```
+ 
+### Commands
+```
+sudo chmod 666 /dev/ttyUSB0
+```
+```
+ros2 run roarm_driver roarm_driver
+```
 
-    echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-    source ~/.bashrc
+```
+ros2 run roarm_moveit_cmd movepointcmd --ros-args --params-file install/roarm_moveit_cmd/share/roarm_moveit_cmd/config/calibration_offsets.yaml 
+```
+```
+ros2 launch roarm_moveit_cmd command_control.launch.py
+```
+```
+ros2 run roarm_moveit_cmd getposecmd
+```
+Calibrate RoArm
+```
+ros2 run roarm_moveit_cmd calibrate_roarm.py --targets-config src/roarm_main/roarm_moveit_cmd/config/calibration_targets.yaml --loops 4 --output-dir
+```
 
-Install Python3 libraries:
 
-    sudo apt install python3-pip
-    cd ~/roarm_ws_em0
-    python3 -m pip install -r requirements.txt
+### Gantry + arm coordinated control
+python3 gantry_arm_controller.py --gantry-port /dev/ttyUSB1
 
-Initial compilation:
 
-    cd ~/roarm_ws_em0
-    sudo chmod +x build_first.sh
-    . build_first.sh
-
-Contents of build_first.sh (automatically run by the script; no manual execution required). This step may take a while to complete.
-
-    cd ~/roarm_ws_em0
-    colcon build
-    echo "source ~/roarm_ws_em0/install/setup.bash" >> ~/.bashrc
-    source ~/.bashrc 
-
-At this point, you can use the tutorial content. Some packages may generate stderr output during the compilation process, which can be ignored.
 
 ### 1.3 Subsequent Compilations and Usage
 Every time you make changes to a package's code, you need to recompile it before using it.
