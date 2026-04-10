@@ -10,6 +10,8 @@ gantry:
 arm:
   reach_radius_mm: 200.0   # comfortable reach radius
   default_z_mm: -15.0       # default end-effector height
+  home_x_mm: 70.0          # arm X at home/origin position (mm)
+  home_y_mm: 115.0            # arm Y at home/origin position (mm)
 
 # --- Pick sequence heights (mm) ---
 pick:

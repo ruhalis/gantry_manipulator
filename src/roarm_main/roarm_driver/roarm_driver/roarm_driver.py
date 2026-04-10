@@ -93,11 +93,11 @@ class RoarmDriver(Node):
         try:
             self.serial_port = serial.Serial(serial_port_name, baud_rate)
             self.get_logger().info(f"{serial_port_name},{baud_rate}.")
-            
+
             start_data = json.dumps({'T': 605, "cmd": 0}) + "\n"
             self.serial_port.write(start_data.encode())
             time.sleep(0.1)
-            
+
         except SerialException as e:
             self.get_logger().error(f"{serial_port_name}：{e}")
             return
