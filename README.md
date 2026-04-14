@@ -34,12 +34,20 @@ ros2 launch roarm_moveit_cmd command_control.launch.py
 ros2 run realsense2_camera realsense2_camera_node
 ```
 ```
+ros2 run roarm_moveit_cmd setgrippercmd 
+```
+```
 ros2 run roarm_moveit_cmd getposecmd
 ```
 Calibrate RoArm
 ```
 ros2 run roarm_moveit_cmd calibrate_roarm.py --targets-config src/roarm_main/roarm_moveit_cmd/config/calibration_targets.yaml --loops 4 --output-dir
 ```
+
+
+
+sudo apt remove brltty
+if don't see usb port on arduino
 
 
 ### Gantry + arm coordinated control
