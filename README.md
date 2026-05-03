@@ -358,3 +358,28 @@ How it works
                                                                                                                                                                                                
   Once this is working, the calibration script is the natural next step — say the word and I'll start on calibrate_pick_accuracy.py (3×3 grid of known world points, command the full pipeline
   to each, capture residuals, fit an affine correction). Want it manual-measure or ArUco-based?  
+
+
+
+
+   1. scripts/calibrate_pick_accuracy.py — new script.                                                                                                                                          
+  - Loads grid + ArUco params from config/pick_controller.yaml (calibration: section), with --grid-x, --grid-y, --marker-id, --dict overrides.
+  - Snake-orders the 9 grid points to minimise gantry travel, drives the full pipeline to each at pick_z, prompts you to seat the marker under the gripper tip, then averages 15 frames of     
+  ArUco detection (median over center pixel) → world coords via the existing homography.                                                                                                     
+  - Fits M = A_fwd · T + b_fwd from commanded→landed pairs, inverts to get commanded = A · desired + b, saves to config/pick_correction.yaml along with raw samples and pre/post residual      
+  stats.                                                                                                                                                                                       
+  - Flags: --auto (skip ENTER prompts), --dry-run (no robot), --marker-id, --dict.                                                                                                             
+                                                                                                                                                                                               
+  2. scripts/camera_sequence_pick.py and scripts/camera_sort_pick.py — both now:                                                                                                               
+  - Load config/pick_correction.yaml at startup (silently falls back to uncorrected if missing).                                                                                               
+  - Apply (wx, wy) = A @ (wx, wy) + b as the first line of goto_world_position, before the gantry/arm split — so every world-coord command (sequence picks, sort picks, sort drops, home) runs 
+  through the correction.                                                                                                                                                                      
+                                                                                                                                                                                               
+  Run order                                                                                                                                                                                  
+  # 1. print ArUco DICT_4X4_50 id 0, ~30mm                                                                                                                                                     
+  # 2. calibrate (interactive)                                                                                                                                                               
+  python3 scripts/calibrate_pick_accuracy.py                                                                                                                                                   
+  # 3. now pick scripts will pick up the correction automatically                                                                                                                            
+  python3 scripts/camera_sort_pick.py                                                                                                                                                          
+                                                                                                                                                                                               
+  Tell me the actual workspace bounds whenever you want and I'll update the defaults in the config.        
