@@ -174,7 +174,35 @@ class ArmMover:
         print(f"  Gripper cmd -> {value:.2f}")
 
 
+def load_pick_correction(path):
+    """Load affine correction (commanded = A @ desired + b). Returns (A, b)
+    or (None, None) if file missing/invalid."""
+    try:
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
+        A = np.array(data['A'], dtype=np.float64)
+        b = np.array(data['b'], dtype=np.float64)
+        if A.shape == (2, 2) and b.shape == (2,):
+            print(f"Pick correction loaded from {path}")
+            return A, b
+    except (FileNotFoundError, KeyError, TypeError):
+        pass
+    return None, None
+
+
+_PICK_CORRECTION = (None, None)
+
+
+def apply_pick_correction(wx, wy):
+    A, b = _PICK_CORRECTION
+    if A is None:
+        return wx, wy
+    v = A @ np.array([wx, wy]) + b
+    return float(v[0]), float(v[1])
+
+
 def goto_world_position(gantry, arm, wx_t, wy_t, home_x, home_y, arm_z, reach_radius_mm):
+    wx_t, wy_t = apply_pick_correction(wx_t, wy_t)
     cur_gx, cur_gy = gantry.get_position() if gantry else (0.0, 0.0)
     gantry_x, gantry_y, rx, ry = compute_gantry_target(
         wx_t, wy_t, cur_gx, cur_gy, home_x, home_y, reach_radius_mm)
@@ -377,6 +405,13 @@ def main():
 
     H, _ = load_calibration(calib_file)
     print(f"Calibration loaded from {calib_file}")
+
+    correction_file = cfg.get('calibration', {}).get(
+        'correction_file', 'config/pick_correction.yaml')
+    global _PICK_CORRECTION
+    _PICK_CORRECTION = load_pick_correction(correction_file)
+    if _PICK_CORRECTION[0] is None:
+        print(f"No pick correction at {correction_file} — running uncorrected")
 
     print(f"Loading YOLO model: {model_path}")
     model = YOLO(model_path)
