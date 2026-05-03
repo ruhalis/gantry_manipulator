@@ -335,3 +335,26 @@ Start the node to draw a circle:
 The x, y, and z parameters specify the center of the circle, and radius specifies the radius of the circle in meters.
 
 By calling this service, you can control the robotic arm to draw a circle at the desired position.
+
+
+
+
+
+How it works                                                                                                                                                                                 
+  - Live RealSense feed runs YOLO every 5th frame (throttled) and overlays each detection with its class, world-mm coords, and the drop zone it would route to.
+  - Press s — snapshots detections at that instant, dedups picks within 25 mm, and queues (pick_xy → drop_xy) jobs based on class_drop_zones. Worker thread runs the routine; camera window    
+  stays live.                                                                                                                                                                                
+  - Press p — force-refresh the preview detections.                                                                                                                                            
+  - Press q — quit.                                                                                                                                                                            
+  - Same recording behavior as camera_sequence_pick.py (writes recordings/sort_<ts>.mp4).                                                                                                      
+                                                                                                                                                                                               
+  You need to update before running                                                                                                                                                            
+  1. sort.model_path in config/pick_controller.yaml — currently best.pt (relative to cwd).                                                                                                     
+  2. sort.class_drop_zones — the keys must match the exact class names your best.pt reports. I put placeholder blue / red mapped to your old hardcoded drop coords (640,270) and (680,534).    
+  3. Optionally tune confidence_threshold, preview_every_n_frames, dedup_radius_mm.                                                                                                            
+                                                                                                                                                                                               
+  Run                                                                                                                                                                                          
+  python3 scripts/camera_sort_pick.py                                                                                                                                                          
+                                                                                                                                                                                               
+  Once this is working, the calibration script is the natural next step — say the word and I'll start on calibrate_pick_accuracy.py (3×3 grid of known world points, command the full pipeline
+  to each, capture residuals, fit an affine correction). Want it manual-measure or ArUco-based?  

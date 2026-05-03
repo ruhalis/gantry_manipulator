@@ -31,3 +31,20 @@ camera:
 yolo:
   model_path: ""             # e.g., yolov8n.pt — leave empty to use click mode
   confidence_threshold: 0.5
+
+# --- Class-based sorting (camera_sort_pick.py) ---
+sort:
+  model_path: best.pt
+  confidence_threshold: 0.5
+  preview_every_n_frames: 5     # throttle live YOLO overlay (1 = every frame)
+  # Map detected class name -> drop-zone world coords in mm.
+  # Class names must match the strings reported by your YOLO model.
+  class_drop_zones:
+    blue: [640.0, 270.0]
+    red:  [680.0, 534.0]
+  # What to do if a detection's class is not in class_drop_zones:
+  #   "skip"  -> ignore the object
+  unknown_action: skip
+  # Minimum spacing (mm) between two pick targets — drop near-duplicates from
+  # the same snapshot (avoids picking the same object twice).
+  dedup_radius_mm: 25.0
