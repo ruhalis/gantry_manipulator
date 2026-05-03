@@ -48,3 +48,14 @@ sort:
   # Minimum spacing (mm) between two pick targets — drop near-duplicates from
   # the same snapshot (avoids picking the same object twice).
   dedup_radius_mm: 25.0
+
+# --- Accuracy calibration (calibrate_pick_accuracy.py) ---
+calibration:
+  # 3x3 grid of world targets (mm). Override with --grid on the CLI.
+  grid_x_mm: [450.0, 565.0, 680.0]
+  grid_y_mm: [285.0, 460.0, 635.0]
+  aruco_dict: DICT_4X4_50
+  aruco_id: 0
+  measure_frames: 15           # frames to average per measurement
+  settle_seconds: 1.5          # wait after move before measuring
+  correction_file: config/pick_correction.yaml
