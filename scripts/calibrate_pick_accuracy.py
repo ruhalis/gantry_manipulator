@@ -168,6 +168,8 @@ ARUCO_DICTS = {
     'DICT_4X4_100': cv2.aruco.DICT_4X4_100,
     'DICT_5X5_50': cv2.aruco.DICT_5X5_50,
     'DICT_6X6_50': cv2.aruco.DICT_6X6_50,
+    'DICT_APRILTAG_36h11': cv2.aruco.DICT_APRILTAG_36h11,
+    'DICT_APRILTAG_36h10': cv2.aruco.DICT_APRILTAG_36h10,
 }
 
 
